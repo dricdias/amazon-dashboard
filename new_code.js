@@ -7,23 +7,23 @@ let products = [];
 // Amazon US sponsored indicators
 const regexPatrocinado = /^(?:Anúncio patrocinado|Sponsored)\s?[–-]?\s?/i;
 
-// Function to convert Amazon image URLs to High Res
+// Function to convert Amazon image URLs to reasonable Res for WhatsApp (500px instead of 1500px)
 const toHighRes = (url) => {
-    if (!url) return null;
-    return url.replace(/\._AC_[^.]+\./, '._AC_SL1500_.');
+  if (!url) return null;
+  return url.replace(/\._AC_[^.]+\./, '._AC_SL500_.');
 };
 
 // Function to safely append affiliate tag based on ASIN regex
 const appendTag = (pUrl, tag) => {
-    if (!pUrl) return pUrl;
-    // Extrair ASIN e adicionar tag de afiliado
-    const asinMatch = pUrl.match(/\/dp\/([a-zA-Z0-9]{10})/i) || pUrl.match(/\/gp\/product\/([a-zA-Z0-9]{10})/i);
-    let asin = asinMatch ? asinMatch[1] : null;
-    if (asin) {
-        return `https://www.amazon.com/dp/${asin}?tag=${tag}`;
-    } else {
-        return pUrl.includes('?') ? `${pUrl}&tag=${tag}` : `${pUrl}?tag=${tag}`;
-    }
+  if (!pUrl) return pUrl;
+  // Extrair ASIN e adicionar tag de afiliado
+  const asinMatch = pUrl.match(/\/dp\/([a-zA-Z0-9]{10})/i) || pUrl.match(/\/gp\/product\/([a-zA-Z0-9]{10})/i);
+  let asin = asinMatch ? asinMatch[1] : null;
+  if (asin) {
+    return `https://www.amazon.com/dp/${asin}?tag=${tag}`;
+  } else {
+    return pUrl.includes('?') ? `${pUrl}&tag=${tag}` : `${pUrl}?tag=${tag}`;
+  }
 };
 
 // --- ESTRATÉGIA 1: Tenta buscar pelo JSON Oculto (Deals/Widgets) ---
@@ -35,7 +35,7 @@ if (startIndex !== -1) {
   let braceCount = 0, endIndex = 0, foundStart = false;
 
   for (let i = 0; i < jsonStringCandidate.length; i++) {
-    if (jsonStringCandidate[i] === '{') { braceCount++; foundStart = true; } 
+    if (jsonStringCandidate[i] === '{') { braceCount++; foundStart = true; }
     else if (jsonStringCandidate[i] === '}') { braceCount--; }
     if (foundStart && braceCount === 0) { endIndex = i + 1; break; }
   }
@@ -43,7 +43,7 @@ if (startIndex !== -1) {
   if (endIndex > 0) {
     try {
       const jsonData = JSON.parse(jsonStringCandidate.substring(0, endIndex));
-      
+
       // Grab BOTH organic search results and ranked promotions
       let organic = jsonData.prefetchedData?.entity?.searchResults?.products || [];
       let promotions = jsonData.prefetchedData?.entity?.rankedPromotions || [];
@@ -53,18 +53,18 @@ if (startIndex !== -1) {
         const productEntity = item.product?.entity || item;
         const buyingOption = productEntity?.buyingOptions?.[0];
         const priceEntity = buyingOption?.price?.entity || productEntity?.price?.entity;
-        
+
         let precoFinal = priceEntity?.priceToPay?.moneyValueOrRange?.value?.amount;
         let tipoPagamento = "Cartão / Padrão";
-        
+
         const activePromotions = productEntity?.promotionsUnified?.entity?.displayablePromotions || [];
         const pixOffer = activePromotions.find(p => p.combinedSavings?.fixedTargetAmount?.amount);
-        
+
         if (pixOffer) {
-            precoFinal = pixOffer.combinedSavings.fixedTargetAmount.amount;
-            tipoPagamento = "À vista (Pix/Boleto)";
+          precoFinal = pixOffer.combinedSavings.fixedTargetAmount.amount;
+          tipoPagamento = "À vista (Pix/Boleto)";
         } else if (item.dealDetails?.entity?.type === "LIGHTNING_DEAL") {
-            tipoPagamento = "Oferta Relâmpago";
+          tipoPagamento = "Oferta Relâmpago";
         }
 
         const partialLink = productEntity?.links?.entity?.viewOnAmazon?.url || productEntity?.url;
@@ -73,7 +73,7 @@ if (startIndex !== -1) {
 
         let tituloTratado = productEntity?.title?.entity?.displayString || productEntity?.title;
         if (tituloTratado) tituloTratado = tituloTratado.replace(regexPatrocinado, "").trim();
-        
+
         // Construct standard amazon US link
         let link = partialLink ? "https://www.amazon.com" + partialLink : null;
 
@@ -95,37 +95,60 @@ if (startIndex !== -1) {
 
 // --- ESTRATÉGIA 2: HTML Parsing via Regex (Busca Geral ou Fallback) ---
 if (products.length === 0) {
-  const productBlocks = html.split('data-component-type="s-search-result"');
+  // Try newer component split or old component split
+  let productBlocks = html.split('data-component-type="s-search-result"');
+  if (productBlocks.length <= 1) {
+    productBlocks = html.split('data-asin="');
+    // Ensure we treat them correctly since split starts AFTER the data-asin="
+    productBlocks = productBlocks.map(b => 'data-asin="' + b);
+  }
 
   for (let i = 1; i < productBlocks.length; i++) {
     const block = productBlocks[i];
     const item = { parcelamento: null, desconto: null };
 
     const asinMatch = block.match(/data-asin="([^"]+)"/);
-    if (asinMatch) item.asin = asinMatch[1];
+    if (asinMatch && asinMatch[1].length > 5) item.asin = asinMatch[1];
 
-    const titleImgMatch = block.match(/<img class="s-image"[^>]*alt="([^"]+)"/);
+    const titleImgMatch = block.match(/<img[^>]*class="[^"]*s-image[^"]*"[^>]*alt="([^"]+)"/);
     if (titleImgMatch) item.titulo = titleImgMatch[1];
     else {
-        const titleTextMatch = block.match(/class="a-size-(?:medium|base-plus|large)[^"]* a-color-base a-text-normal"[^>]*>([^<]+)</);
-        if (titleTextMatch) item.titulo = titleTextMatch[1];
+      // Broadened title regex to catch all heading a-size variants
+      const titleTextMatch = block.match(/class="a-size-(?:medium|base-plus|large|base)[^"]* a-color-base a-text-normal"[^>]*>([^<]+)</);
+      if (titleTextMatch) item.titulo = titleTextMatch[1];
+      else {
+        const h2Match = block.match(/<script([^>]*?)><\/script>\s*<span([^>]*?)>([^<]+)<\/span>/i);
+        if (h2Match) item.titulo = h2Match[3];
+      }
     }
     if (item.titulo) item.titulo = item.titulo.replace(regexPatrocinado, "").trim();
 
-    let linkMatch = block.match(/class="a-link-normal s-no-outline"[^>]*href="([^"]+)"/);
+    // Broader link match
+    let linkMatch = block.match(/href="([^"]+\/dp\/[^"]+)"/);
+    if (!linkMatch) linkMatch = block.match(/class="a-link-normal[^"]*"[^>]*href="([^"]+)"/);
+
     if (linkMatch) {
-        let link = linkMatch[1];
-        if (!link.startsWith('http')) link = "https://www.amazon.com" + link;
-        item.link = appendTag(link, affiliateTag);
+      let link = linkMatch[1];
+      if (!link.startsWith('http')) link = "https://www.amazon.com" + link;
+      item.link = appendTag(link, affiliateTag);
     }
 
-    const imgMatch = block.match(/<img class="s-image"[^>]*src="([^"]+)"/);
+    const imgMatch = block.match(/<img[^>]*class="[^"]*s-image[^"]*"[^>]*src="([^"]+)"/);
     if (imgMatch) item.imagem = toHighRes(imgMatch[1]);
 
-    const priceCurrentMatch = block.match(/<span class="a-price"[^>]*><span class="a-offscreen">([^<]+)</);
+    // Broader price match
+    let priceCurrentMatch = block.match(/<span class="a-price"[^>]*>.*?<span class="a-offscreen">([^<]+)<\/span>/);
     if (priceCurrentMatch) {
-        item.preco_atual = priceCurrentMatch[1].replace(/[^\d,.]/g, '').trim(); 
+      item.preco_atual = priceCurrentMatch[1].replace(/[^\d,.]/g, '').trim();
+      item.condicao_pagamento = "Preço Amazon";
+    } else {
+      // Fallback to integer and fractional price elements
+      const priceWhole = block.match(/<span class="a-price-whole">([^<]+?)<span/);
+      const priceFraction = block.match(/<span class="a-price-fraction">([^<]+)<\/span>/);
+      if (priceWhole && priceFraction) {
+        item.preco_atual = priceWhole[1].replace(/[^\d]/g, '') + "." + priceFraction[1].replace(/[^\d]/g, '');
         item.condicao_pagamento = "Preço Amazon";
+      }
     }
 
     const priceOldMatch = block.match(/<span class="a-price a-text-price"[^>]*><span class="a-offscreen">([^<]+)</);
@@ -152,59 +175,59 @@ staticData.seenAsins = staticData.seenAsins || [];
 const seenAsins = new Set(staticData.seenAsins);
 
 products = products.map(item => {
-    // Nova função de parsing blindada contra os erros de formatação da Amazon
-    const parsePrice = (priceVal) => {
-        if (priceVal === null || priceVal === undefined || priceVal === '') return 0;
-        if (typeof priceVal === 'number') return priceVal;
-        
-        let str = String(priceVal).trim();
-        // Formato EUA: vírgula é separador de milhar (1,234.56). Remove a vírgula.
-        str = str.replace(/,/g, '');
-        // Remove qualquer letra, espaço ou símbolo que não seja dígito ou ponto
-        str = str.replace(/[^\d.]/g, '');
-        return parseFloat(str) || 0;
-    };
+  // Nova função de parsing blindada contra os erros de formatação da Amazon
+  const parsePrice = (priceVal) => {
+    if (priceVal === null || priceVal === undefined || priceVal === '') return 0;
+    if (typeof priceVal === 'number') return priceVal;
 
-    let vAtual = parsePrice(item.preco_atual);
-    let vAntigo = parsePrice(item.preco_antigo);
+    let str = String(priceVal).trim();
+    // Formato EUA: vírgula é separador de milhar (1,234.56). Remove a vírgula.
+    str = str.replace(/,/g, '');
+    // Remove qualquer letra, espaço ou símbolo que não seja dígito ou ponto
+    str = str.replace(/[^\d.]/g, '');
+    return parseFloat(str) || 0;
+  };
 
-    // 1. FILTRO DE PRODUTOS IGNORADOS (Livros, Digitais, Assinaturas e R$ 0,00)
-    // Avoid missing items by returning null properly
-    if (vAtual === 0 || regexDigitaisELivros.test(item.titulo)) {
-        return null; 
-    }
-    if (item.asin && regexIsbn.test(item.asin)) {
-        return null; 
-    }
-    
-    // Filtro de duplicatas
-    if (item.asin) {
-        if (seenAsins.has(item.asin)) return null;
-        seenAsins.add(item.asin);
-    }
+  let vAtual = parsePrice(item.preco_atual);
+  let vAntigo = parsePrice(item.preco_antigo);
 
-    // 2. Textos amigáveis caso as informações venham em branco
-    if (!item.parcelamento) item.parcelamento = "Consulte opções de parcelamento no site";
-    if (!item.desconto) item.desconto = "Oferta imperdível";
-    if (!item.condicao_pagamento) item.condicao_pagamento = "Aproveite o preço reduzido";
+  // 1. FILTRO DE PRODUTOS IGNORADOS (Livros, Digitais, Assinaturas e R$ 0,00)
+  // Avoid missing items by returning null properly
+  if (vAtual === 0 || regexDigitaisELivros.test(item.titulo)) {
+    return null;
+  }
+  if (item.asin && regexIsbn.test(item.asin)) {
+    return null;
+  }
 
-    // 3. TRAVA DE SEGURANÇA E CORREÇÃO LÓGICA DE PREÇOS
-    // Dispara se: não tem preço antigo, atual é mais caro que o antigo, ou se o antigo for absurdamente alto (erro da Amazon)
-    if (!vAntigo || vAtual >= vAntigo || vAntigo > (vAtual * 3)) {
-        vAntigo = vAtual * 1.15; // Adiciona 15% como fallback natural
-    }
+  // Filtro de duplicatas
+  if (item.asin) {
+    if (seenAsins.has(item.asin)) return null;
+    seenAsins.add(item.asin);
+  }
 
-    // 4. Padroniza o retorno como Texto formato Moeda EUA garantindo o visual final
-    item.preco_atual = vAtual.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    item.preco_antigo = vAntigo.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // 2. Textos amigáveis caso as informações venham em branco
+  if (!item.parcelamento) item.parcelamento = "Consulte opções de parcelamento no site";
+  if (!item.desconto) item.desconto = "Oferta imperdível";
+  if (!item.condicao_pagamento) item.condicao_pagamento = "Aproveite o preço reduzido";
 
-    return item;
+  // 3. TRAVA DE SEGURANÇA E CORREÇÃO LÓGICA DE PREÇOS
+  // Dispara se: não tem preço antigo, atual é mais caro que o antigo, ou se o antigo for absurdamente alto (erro da Amazon)
+  if (!vAntigo || vAtual >= vAntigo || vAntigo > (vAtual * 3)) {
+    vAntigo = vAtual * 1.15; // Adiciona 15% como fallback natural
+  }
+
+  // 4. Padroniza o retorno como Texto formato Moeda EUA garantindo o visual final
+  item.preco_atual = vAtual.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  item.preco_antigo = vAntigo.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  return item;
 }).filter(item => item !== null);
 
 // Save seenAsins back to staticData (limit to 1000 items to avoid bloated state)
 staticData.seenAsins = Array.from(seenAsins);
 if (staticData.seenAsins.length > 1000) {
-    staticData.seenAsins = staticData.seenAsins.slice(-1000);
+  staticData.seenAsins = staticData.seenAsins.slice(-1000);
 }
 
 // Shuffle products to give a good mix of organic results

@@ -2,12 +2,11 @@ const fs = require('fs');
 
 async function updateWorkflow() {
     const host = process.env.N8N_HOST || 'https://webhook.agilitytecno.com';
-    const apiKey = process.env.N8N_API_KEY;
+    const apiKey = process.env.N8N_API_KEY || 'N8N_API_KEY_HERE'; // The user usually has this in their env
     const workflowId = 'PQpIqqL5WErQVo1c';
 
-    if (!apiKey) {
-        console.error('N8N_API_KEY is required in the environment variables');
-        process.exit(1);
+    if (!process.env.N8N_API_KEY) {
+        console.warn('WARNING: N8N_API_KEY not found in env, make sure it is set before running.');
     }
 
     try {
@@ -28,34 +27,8 @@ async function updateWorkflow() {
             return;
         }
 
-        let code = node.parameters.jsCode;
-
-        // Replace seenAsins initialization
-        const initRegex = /\/\/ Conjunto para evitar itens duplicados \(mesmo ASIN\)\nconst seenAsins = new Set\(\);/;
-        const newInit = `// Conjunto para evitar itens duplicados (mesmo ASIN)
-const staticData = $getWorkflowStaticData("global");
-staticData.seenAsins = staticData.seenAsins || [];
-const seenAsins = new Set(staticData.seenAsins);`;
-
-        code = code.replace(initRegex, newInit);
-
-        // Save back to static data at the end of the script before products.sort()
-        const endRegex = /\/\/ Shuffle products to give a good mix of organic results/;
-        const newEnd = `// Save seenAsins back to staticData (limit to 1000 items to avoid bloated state)
-staticData.seenAsins = Array.from(seenAsins);
-if (staticData.seenAsins.length > 1000) {
-    staticData.seenAsins = staticData.seenAsins.slice(-1000);
-}
-
-// Shuffle products to give a good mix of organic results`;
-
-        if (!code.includes('staticData.seenAsins = Array.from(seenAsins);')) {
-            code = code.replace(endRegex, newEnd);
-        }
-
-        node.parameters.jsCode = code;
-
-        fs.writeFileSync('new_code.js', code);
+        const newCode = fs.readFileSync('new_code.js', 'utf8');
+        node.parameters.jsCode = newCode;
 
         delete workflow.id;
         delete workflow.createdAt;
@@ -72,7 +45,7 @@ if (staticData.seenAsins.length > 1000) {
         });
 
         if (updateRes.ok) {
-            console.log("Fluxo atualizado com sucesso!");
+            console.log("Fluxo atualizado com sucesso no n8n!");
         } else {
             console.error('Failed to update workflow', await updateRes.text());
         }

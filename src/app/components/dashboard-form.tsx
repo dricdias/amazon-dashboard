@@ -25,7 +25,7 @@ const formSchema = z.object({
     tag_amazon: z.string().min(1, 'Tag Amazon é obrigatória'),
     cookies_amazon: z.string().min(10, 'Insira os cookies válidos da Amazon'),
     instancia_whatsapp: z.string().min(1, 'Instância do WhatsApp é obrigatória'),
-    minutos_verificacao: z.number().min(1, 'Tempo mínimo de 1 minuto'),
+    segundos_espera: z.number().min(1, 'Tempo mínimo de 1 segundo'),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -62,7 +62,7 @@ export function DashboardForm() {
             tag_amazon: 'linkalhub-20',
             cookies_amazon: '',
             instancia_whatsapp: 'Adriano',
-            minutos_verificacao: 15,
+            segundos_espera: 60,
         },
     });
 
@@ -172,10 +172,10 @@ export function DashboardForm() {
 
                     <FormField
                         control={form.control}
-                        name="minutos_verificacao"
+                        name="segundos_espera"
                         render={({ field }) => (
                             <FormItem>
-                                <FormLabel className="text-slate-200">Espera (Minutos)</FormLabel>
+                                <FormLabel className="text-slate-200">Espera (Segundos)</FormLabel>
                                 <FormControl>
                                     <Input
                                         type="number"
@@ -185,7 +185,7 @@ export function DashboardForm() {
                                         onChange={e => field.onChange(e.target.valueAsNumber || 0)}
                                     />
                                 </FormControl>
-                                <FormDescription className="text-slate-400">Tempo entre buscas</FormDescription>
+                                <FormDescription className="text-slate-400">Tempo de espera em segundos entre buscas</FormDescription>
                                 <FormMessage className="text-red-400" />
                             </FormItem>
                         )}

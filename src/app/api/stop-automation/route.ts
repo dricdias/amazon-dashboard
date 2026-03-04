@@ -3,7 +3,10 @@ import { NextResponse } from 'next/server';
 export async function POST(request: Request) {
     try {
         const apiKey = process.env.N8N_API_KEY;
-        const host = process.env.N8N_HOST || 'https://webhook.agilitytecno.com';
+        let host = process.env.N8N_HOST || 'https://webhook.agilitytecno.com';
+        if (host.endsWith('/')) {
+            host = host.slice(0, -1);
+        }
 
         if (!apiKey) {
             return NextResponse.json(
