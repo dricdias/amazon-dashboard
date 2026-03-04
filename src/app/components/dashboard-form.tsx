@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Loader2, Send } from 'lucide-react';
+import { Loader2, Send, Activity } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -33,6 +33,26 @@ type FormValues = z.infer<typeof formSchema>;
 export function DashboardForm() {
     const [isLoading, setIsLoading] = useState(false);
     const [isStopping, setIsStopping] = useState(false);
+    const [isRunning, setIsRunning] = useState(false);
+
+    useEffect(() => {
+        const checkStatus = async () => {
+            try {
+                const res = await fetch('/api/status-automation');
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    setIsRunning(data.isRunning);
+                    if (data.isRunning) setIsLoading(false);
+                }
+            } catch (error) {
+                console.error('Erro ao verificar status:', error);
+            }
+        };
+
+        checkStatus();
+        const intervalId = setInterval(checkStatus, 5000);
+        return () => clearInterval(intervalId);
+    }, []);
 
     const form = useForm<FormValues>({
         resolver: zodResolver(formSchema),
@@ -204,7 +224,7 @@ export function DashboardForm() {
                 <div className="flex flex-col sm:flex-row gap-4">
                     <Button
                         type="submit"
-                        disabled={isLoading || isStopping}
+                        disabled={isLoading || isStopping || isRunning}
                         className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-semibold shadow-lg shadow-blue-900/20 transition-all"
                     >
                         {isLoading ? (
@@ -212,15 +232,15 @@ export function DashboardForm() {
                         ) : (
                             <Send className="mr-2 h-4 w-4" />
                         )}
-                        {isLoading ? 'Iniciando Automacão...' : 'Iniciar Automação'}
+                        {isLoading ? 'Iniciando...' : isRunning ? 'Automação Ativa' : 'Iniciar Automação'}
                     </Button>
 
                     <Button
                         type="button"
                         onClick={onStop}
                         variant="destructive"
-                        disabled={isLoading || isStopping}
-                        className="flex-1 bg-red-600/90 hover:bg-red-500 text-white font-semibold shadow-lg shadow-red-900/20 transition-all"
+                        disabled={isLoading || isStopping || !isRunning}
+                        className="flex-1 bg-red-600/90 hover:bg-red-500 text-white font-semibold shadow-lg shadow-red-900/20 transition-all disabled:opacity-50"
                     >
                         {isStopping ? (
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -228,6 +248,26 @@ export function DashboardForm() {
                         {isStopping ? 'Parando...' : 'Parar Automação'}
                     </Button>
                 </div>
+
+                <div className="mt-6 flex items-center justify-center p-4 rounded-lg bg-slate-900/50 border border-slate-800">
+                    <div className="flex items-center gap-3">
+                        <div className="relative flex h-3 w-3">
+                            {isRunning ? (
+                                <>
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                                </>
+                            ) : (
+                                <span className="relative inline-flex rounded-full h-3 w-3 bg-slate-500"></span>
+                            )}
+                        </div>
+                        <span className="text-sm font-medium text-slate-300">
+                            Status do Sistema: {isRunning ? <span className="text-green-400 font-bold">Rodando Extração</span> : <span>Em Espera (Parado)</span>}
+                        </span>
+                        {isRunning && <Activity className="w-4 h-4 text-green-400 animate-pulse ml-2" />}
+                    </div>
+                </div>
+
             </form>
         </Form >
     );

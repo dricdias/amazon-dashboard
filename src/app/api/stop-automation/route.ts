@@ -12,25 +12,30 @@ export async function POST(request: Request) {
             );
         }
 
-        // Busca todas as execuções com status "waiting" ou "running"
-        const response = await fetch(`${host}/api/v1/executions?status=waiting`, {
+        // Busca as execuções "waiting"
+        const responseWaiting = await fetch(`${host}/api/v1/executions?status=waiting`, {
             method: 'GET',
-            headers: {
-                'X-N8N-API-KEY': apiKey,
-                'Accept': 'application/json'
-            }
+            headers: { 'X-N8N-API-KEY': apiKey, 'Accept': 'application/json' }
         });
 
-        if (!response.ok) {
-            console.error('Erro na resposta do n8n ao buscar execuções:', response.status, response.statusText);
+        // E também as "running"
+        const responseRunning = await fetch(`${host}/api/v1/executions?status=running`, {
+            method: 'GET',
+            headers: { 'X-N8N-API-KEY': apiKey, 'Accept': 'application/json' }
+        });
+
+        if (!responseWaiting.ok || !responseRunning.ok) {
+            console.error('Erro na resposta do n8n ao buscar execuções');
             return NextResponse.json(
                 { error: 'Falha ao buscar execuções no n8n. Verifique a API Key.' },
-                { status: response.status }
+                { status: 500 }
             );
         }
 
-        const data = await response.json();
-        const executions = data.data || [];
+        const dataWaiting = await responseWaiting.json();
+        const dataRunning = await responseRunning.json();
+
+        const executions = [...(dataWaiting.data || []), ...(dataRunning.data || [])];
 
         if (executions.length === 0) {
             return NextResponse.json({ success: true, message: 'Nenhuma automação em andamento encontrada.' });
